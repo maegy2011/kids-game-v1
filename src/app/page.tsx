@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 
-type GameCategory = "home" | "fruits" | "vegetables" | "numbers" | "letters" | "animals" | "birds" | "colors" | "shapes" | "quiz";
+type GameCategory = "home" | "fruits" | "vegetables" | "numbers" | "letters" | "animals" | "birds" | "colors" | "shapes" | "quiz" | "matching" | "memory";
 
 const ELEVENLABS_API_KEY = "sk_866a65c48f621390859f144b157ba8c7feb96cc7cd4d8b38";
 const ARABIC_VOICE_ID = "xemcw1zMAwVsXRgzTd4Y";
@@ -334,6 +334,8 @@ export default function Home() {
     { id: "letters" as GameCategory, name: "الحروف", emoji: "أ", color: "#E91E63", bgColor: "#FCE4EC" },
     { id: "colors" as GameCategory, name: "الألوان", emoji: "🎨", color: "#FF5722", bgColor: "#FBE9E7" },
     { id: "shapes" as GameCategory, name: "الأشكال", emoji: "⬛", color: "#607D8B", bgColor: "#ECEFF1" },
+    { id: "matching" as GameCategory, name: "المطابقة", emoji: "🔗", color: "#00BCD4", bgColor: "#E0F7FA" },
+    { id: "memory" as GameCategory, name: "الذاكرة", emoji: "🧠", color: "#9C27B0", bgColor: "#F3E5F5" },
     { id: "quiz" as GameCategory, name: "اختبار", emoji: "❓", color: "#673AB7", bgColor: "#EDE7F6" },
   ];
 
@@ -647,6 +649,24 @@ export default function Home() {
             <QuizGame
               onCorrect={() => {
                 setScore((prev) => prev + 5);
+                triggerCelebration();
+              }}
+            />
+          )}
+
+          {currentGame === "matching" && (
+            <MatchingGame
+              onCorrect={() => {
+                setScore((prev) => prev + 3);
+                triggerCelebration();
+              }}
+            />
+          )}
+
+          {currentGame === "memory" && (
+            <MemoryGame
+              onCorrect={() => {
+                setScore((prev) => prev + 2);
                 triggerCelebration();
               }}
             />
@@ -1368,16 +1388,537 @@ function QuizGame({ onCorrect }: { onCorrect: () => void }) {
             {isCorrect ? "🎉 أحسنت! 🎉" : "😢 حاول مرة أخرى!"}
           </motion.div>
           
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={nextQuestion}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-full px-10 py-4 text-2xl font-black text-white shadow-xl border-4 border-white"
-          >
-            {currentQuestion < totalQuestions - 1 ? "السؤال التالي ➡️" : "إنهاء الاختبار 🏁"}
-          </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={nextQuestion}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-full px-10 py-4 text-2xl font-black text-white shadow-xl border-4 border-white"
+            >
+              {currentQuestion < totalQuestions - 1 ? "السؤال التالي ➡️" : "إنهاء الاختبار 🏁"}
+            </motion.button>
+          </motion.div>
+        )}
+      </motion.div>
+    );
+  }
+
+type MatchingCategory = "fruits" | "vegetables" | "animals" | "birds";
+
+function MatchingGame({ onCorrect }: { onCorrect: () => void }) {
+  const [matchingCategory, setMatchingCategory] = useState<MatchingCategory | null>(null);
+  const [leftItems, setLeftItems] = useState<{ id: number; display: string; name: string; color: string }[]>([]);
+  const [rightItems, setRightItems] = useState<{ id: number; name: string; color: string; matched: boolean }[]>([]);
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [matchedPairs, setMatchedPairs] = useState<number[]>([]);
+  const [wrongMatch, setWrongMatch] = useState<{ left: number; right: number } | null>(null);
+  const [gameComplete, setGameComplete] = useState(false);
+  const [matchScore, setMatchScore] = useState(0);
+
+  const matchingCategories = [
+    { id: "fruits" as MatchingCategory, name: "الفواكه", emoji: "🍎", color: "#FF6B6B" },
+    { id: "vegetables" as MatchingCategory, name: "الخضروات", emoji: "🥕", color: "#4CAF50" },
+    { id: "animals" as MatchingCategory, name: "الحيوانات", emoji: "🦁", color: "#FF9800" },
+    { id: "birds" as MatchingCategory, name: "الطيور", emoji: "🐦", color: "#03A9F4" },
+  ];
+
+  const getDataForCategory = (category: MatchingCategory) => {
+    switch (category) {
+      case "fruits":
+        return fruitsData.slice(0, 6).map((f, i) => ({ id: i, display: f.emoji, name: f.name, color: f.color }));
+      case "vegetables":
+        return vegetablesData.slice(0, 6).map((v, i) => ({ id: i, display: v.emoji, name: v.name, color: v.color }));
+      case "animals":
+        return animalsData.slice(0, 6).map((a, i) => ({ id: i, display: a.emoji, name: a.name, color: a.color }));
+      case "birds":
+        return birdsData.slice(0, 6).map((b, i) => ({ id: i, display: b.emoji, name: b.name, color: b.color }));
+    }
+  };
+
+  const startGame = useCallback((category: MatchingCategory) => {
+    const data = getDataForCategory(category);
+    const shuffledLeft = [...data].sort(() => Math.random() - 0.5);
+    const shuffledRight = [...data].sort(() => Math.random() - 0.5).map(item => ({
+      ...item,
+      matched: false,
+    }));
+    
+    setLeftItems(shuffledLeft);
+    setRightItems(shuffledRight);
+    setSelectedLeft(null);
+    setMatchedPairs([]);
+    setWrongMatch(null);
+    setGameComplete(false);
+    setMatchScore(0);
+  }, []);
+
+  useEffect(() => {
+    if (matchingCategory) {
+      startGame(matchingCategory);
+    }
+  }, [matchingCategory, startGame]);
+
+  const handleLeftClick = (id: number) => {
+    if (matchedPairs.includes(id)) return;
+    setSelectedLeft(id);
+    setWrongMatch(null);
+  };
+
+  const handleRightClick = (id: number) => {
+    if (selectedLeft === null || rightItems.find(r => r.id === id)?.matched) return;
+    
+    if (selectedLeft === id) {
+      setMatchedPairs(prev => [...prev, id]);
+      setRightItems(prev => prev.map(item => 
+        item.id === id ? { ...item, matched: true } : item
+      ));
+      setMatchScore(prev => prev + 1);
+      onCorrect();
+      speakArabic("أحسنت!");
+      
+      if (matchedPairs.length + 1 === leftItems.length) {
+        setTimeout(() => {
+          setGameComplete(true);
+          speakArabic("ممتاز! أكملت اللعبة!");
+        }, 500);
+      }
+    } else {
+      setWrongMatch({ left: selectedLeft, right: id });
+      speakArabic("حاول مرة أخرى!");
+      setTimeout(() => setWrongMatch(null), 800);
+    }
+    setSelectedLeft(null);
+  };
+
+  if (!matchingCategory) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -30 }}
+        className="flex flex-col items-center"
+      >
+        <motion.h2
+          initial={{ scale: 0, rotate: -10 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", bounce: 0.5 }}
+          className="text-3xl md:text-6xl font-black text-purple-700 text-center mb-8 drop-shadow-lg"
+        >
+          🔗 اختر نوع المطابقة 🔗
+        </motion.h2>
+
+        <div className="grid grid-cols-2 gap-4 md:gap-6 max-w-2xl w-full px-4">
+          {matchingCategories.map((cat, index) => (
+            <motion.button
+              key={cat.id}
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1, type: "spring", bounce: 0.4 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setMatchingCategory(cat.id)}
+              className="rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-8 shadow-xl flex flex-col items-center gap-2 md:gap-3 border-4 border-white active:scale-95 transition-transform"
+              style={{ backgroundColor: cat.color + "30" }}
+            >
+              <span className="text-5xl md:text-8xl">{cat.emoji}</span>
+              <span className="text-lg md:text-2xl font-black" style={{ color: cat.color }}>
+                {cat.name}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (gameComplete) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center gap-6 px-4"
+      >
+        <motion.div
+          className="text-[80px] md:text-[120px]"
+          animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
+          transition={{ duration: 1, repeat: Infinity }}
+        >
+          🎉
         </motion.div>
-      )}
+        <h2 className="text-3xl md:text-5xl font-black text-purple-700 text-center">
+          ممتاز! أكملت اللعبة!
+        </h2>
+        <p className="text-2xl md:text-3xl font-bold text-green-600">
+          النتيجة: {matchScore} / {leftItems.length}
+        </p>
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setMatchingCategory(null)}
+          className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-full px-8 py-4 text-xl md:text-2xl font-black text-white shadow-xl border-4 border-white"
+        >
+          العب مرة أخرى 🔄
+        </motion.button>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -30 }}
+      className="flex flex-col items-center w-full px-2 md:px-4"
+    >
+      <motion.h2
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        className="text-2xl md:text-4xl font-black text-purple-700 text-center mb-4 md:mb-6 drop-shadow-lg"
+      >
+        🔗 طابق الصورة بالاسم 🔗
+      </motion.h2>
+
+      <div className="bg-gradient-to-r from-green-400 to-emerald-400 rounded-full px-4 py-2 md:px-6 md:py-3 shadow-lg mb-4 md:mb-6">
+        <span className="text-xl md:text-2xl font-black text-white">
+          {matchedPairs.length} / {leftItems.length}
+        </span>
+      </div>
+
+      <div className="flex gap-3 md:gap-8 w-full max-w-4xl justify-center">
+        <div className="flex flex-col gap-2 md:gap-3">
+          {leftItems.map((item) => (
+            <motion.button
+              key={`left-${item.id}`}
+              initial={{ opacity: 0, x: -50 }}
+              animate={{ opacity: 1, x: 0 }}
+              whileHover={{ scale: matchedPairs.includes(item.id) ? 1 : 1.05 }}
+              whileTap={{ scale: matchedPairs.includes(item.id) ? 1 : 0.95 }}
+              onClick={() => handleLeftClick(item.id)}
+              className={`rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg flex items-center justify-center border-4 transition-all min-w-[70px] md:min-w-[100px] active:scale-95 ${
+                matchedPairs.includes(item.id)
+                  ? "opacity-50 border-green-500 bg-green-100"
+                  : selectedLeft === item.id
+                  ? "border-yellow-400 bg-yellow-50 ring-4 ring-yellow-300"
+                  : wrongMatch?.left === item.id
+                  ? "border-red-500 bg-red-100 animate-pulse"
+                  : "border-white bg-white"
+              }`}
+              disabled={matchedPairs.includes(item.id)}
+            >
+              <span className="text-4xl md:text-6xl">{item.display}</span>
+            </motion.button>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-2 md:gap-3">
+          {rightItems.map((item) => (
+            <motion.button
+              key={`right-${item.id}`}
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              whileHover={{ scale: item.matched ? 1 : 1.05 }}
+              whileTap={{ scale: item.matched ? 1 : 0.95 }}
+              onClick={() => handleRightClick(item.id)}
+              className={`rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg flex items-center justify-center border-4 transition-all min-w-[80px] md:min-w-[120px] active:scale-95 ${
+                item.matched
+                  ? "opacity-50 border-green-500 bg-green-100"
+                  : wrongMatch?.right === item.id
+                  ? "border-red-500 bg-red-100 animate-pulse"
+                  : "border-white bg-white hover:border-cyan-300"
+              }`}
+              disabled={item.matched}
+            >
+              <span 
+                className="text-lg md:text-2xl font-black"
+                style={{ color: item.color }}
+              >
+                {item.name}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setMatchingCategory(null)}
+        className="mt-6 md:mt-8 bg-gray-200 rounded-full px-6 py-3 text-lg md:text-xl font-bold text-gray-700 shadow-lg border-4 border-white"
+      >
+        رجوع ↩️
+      </motion.button>
+    </motion.div>
+  );
+}
+
+type MemoryCategory = "fruits" | "animals" | "colors" | "shapes";
+
+interface MemoryCard {
+  id: number;
+  pairId: number;
+  display: string;
+  color: string;
+  isFlipped: boolean;
+  isMatched: boolean;
+  type?: string;
+}
+
+function MemoryGame({ onCorrect }: { onCorrect: () => void }) {
+  const [memoryCategory, setMemoryCategory] = useState<MemoryCategory | null>(null);
+  const [cards, setCards] = useState<MemoryCard[]>([]);
+  const [flippedCards, setFlippedCards] = useState<number[]>([]);
+  const [matchedPairs, setMatchedPairs] = useState<number[]>([]);
+  const [moves, setMoves] = useState(0);
+  const [gameComplete, setGameComplete] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+
+  const memoryCategories = [
+    { id: "fruits" as MemoryCategory, name: "الفواكه", emoji: "🍎", color: "#FF6B6B" },
+    { id: "animals" as MemoryCategory, name: "الحيوانات", emoji: "🦁", color: "#FF9800" },
+    { id: "colors" as MemoryCategory, name: "الألوان", emoji: "🎨", color: "#FF5722" },
+    { id: "shapes" as MemoryCategory, name: "الأشكال", emoji: "⬛", color: "#607D8B" },
+  ];
+
+  const getDataForCategory = (category: MemoryCategory): { display: string; color: string; type?: string }[] => {
+    switch (category) {
+      case "fruits":
+        return fruitsData.slice(0, 6).map(f => ({ display: f.emoji, color: f.color }));
+      case "animals":
+        return animalsData.slice(0, 6).map(a => ({ display: a.emoji, color: a.color }));
+      case "colors":
+        return colorsData.slice(0, 6).map(c => ({ display: "●", color: c.color }));
+      case "shapes":
+        return shapesData.slice(0, 6).map(s => ({ display: s.shape, color: s.color, type: "shape" }));
+    }
+  };
+
+  const startGame = useCallback((category: MemoryCategory) => {
+    const data = getDataForCategory(category);
+    const pairs: MemoryCard[] = [];
+    
+    data.forEach((item, index) => {
+      pairs.push(
+        { id: index * 2, pairId: index, display: item.display, color: item.color, isFlipped: false, isMatched: false, type: item.type },
+        { id: index * 2 + 1, pairId: index, display: item.display, color: item.color, isFlipped: false, isMatched: false, type: item.type }
+      );
+    });
+
+    const shuffled = pairs.sort(() => Math.random() - 0.5);
+    setCards(shuffled);
+    setFlippedCards([]);
+    setMatchedPairs([]);
+    setMoves(0);
+    setGameComplete(false);
+    setIsChecking(false);
+  }, []);
+
+  useEffect(() => {
+    if (memoryCategory) {
+      startGame(memoryCategory);
+    }
+  }, [memoryCategory, startGame]);
+
+  const handleCardClick = (id: number) => {
+    if (isChecking) return;
+    
+    const card = cards.find(c => c.id === id);
+    if (!card || card.isFlipped || card.isMatched) return;
+    if (flippedCards.length >= 2) return;
+
+    const newFlippedCards = [...flippedCards, id];
+    setFlippedCards(newFlippedCards);
+    setCards(prev => prev.map(c => c.id === id ? { ...c, isFlipped: true } : c));
+
+    if (newFlippedCards.length === 2) {
+      setIsChecking(true);
+      setMoves(prev => prev + 1);
+      
+      const [firstId, secondId] = newFlippedCards;
+      const firstCard = cards.find(c => c.id === firstId);
+      const secondCard = cards.find(c => c.id === secondId);
+
+      if (firstCard && secondCard && firstCard.pairId === secondCard.pairId) {
+        setTimeout(() => {
+          setCards(prev => prev.map(c => 
+            c.id === firstId || c.id === secondId 
+              ? { ...c, isMatched: true } 
+              : c
+          ));
+          setMatchedPairs(prev => [...prev, firstCard.pairId]);
+          setFlippedCards([]);
+          setIsChecking(false);
+          onCorrect();
+          speakArabic("أحسنت!");
+
+          if (matchedPairs.length + 1 === cards.length / 2) {
+            setTimeout(() => {
+              setGameComplete(true);
+              speakArabic("ممتاز! أكملت اللعبة!");
+            }, 500);
+          }
+        }, 600);
+      } else {
+        setTimeout(() => {
+          setCards(prev => prev.map(c => 
+            c.id === firstId || c.id === secondId 
+              ? { ...c, isFlipped: false } 
+              : c
+          ));
+          setFlippedCards([]);
+          setIsChecking(false);
+        }, 1000);
+      }
+    }
+  };
+
+  if (!memoryCategory) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -30 }}
+        className="flex flex-col items-center"
+      >
+        <motion.h2
+          initial={{ scale: 0, rotate: -10 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", bounce: 0.5 }}
+          className="text-3xl md:text-6xl font-black text-purple-700 text-center mb-8 drop-shadow-lg"
+        >
+          🧠 اختر نوع لعبة الذاكرة 🧠
+        </motion.h2>
+
+        <div className="grid grid-cols-2 gap-4 md:gap-6 max-w-2xl w-full px-4">
+          {memoryCategories.map((cat, index) => (
+            <motion.button
+              key={cat.id}
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1, type: "spring", bounce: 0.4 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setMemoryCategory(cat.id)}
+              className="rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-8 shadow-xl flex flex-col items-center gap-2 md:gap-3 border-4 border-white active:scale-95 transition-transform"
+              style={{ backgroundColor: cat.color + "30" }}
+            >
+              <span className="text-5xl md:text-8xl">{cat.emoji}</span>
+              <span className="text-lg md:text-2xl font-black" style={{ color: cat.color }}>
+                {cat.name}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (gameComplete) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center gap-6 px-4"
+      >
+        <motion.div
+          className="text-[80px] md:text-[120px]"
+          animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
+          transition={{ duration: 1, repeat: Infinity }}
+        >
+          🎉
+        </motion.div>
+        <h2 className="text-3xl md:text-5xl font-black text-purple-700 text-center">
+          ممتاز! أكملت اللعبة!
+        </h2>
+        <p className="text-2xl md:text-3xl font-bold text-green-600">
+          عدد المحاولات: {moves}
+        </p>
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setMemoryCategory(null)}
+          className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-full px-8 py-4 text-xl md:text-2xl font-black text-white shadow-xl border-4 border-white"
+        >
+          العب مرة أخرى 🔄
+        </motion.button>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -30 }}
+      className="flex flex-col items-center w-full px-2 md:px-4"
+    >
+      <motion.h2
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        className="text-2xl md:text-4xl font-black text-purple-700 text-center mb-4 drop-shadow-lg"
+      >
+        🧠 لعبة الذاكرة 🧠
+      </motion.h2>
+
+      <div className="flex gap-4 mb-4 md:mb-6">
+        <div className="bg-gradient-to-r from-purple-400 to-pink-400 rounded-full px-4 py-2 md:px-6 md:py-3 shadow-lg">
+          <span className="text-lg md:text-2xl font-black text-white">
+            المحاولات: {moves}
+          </span>
+        </div>
+        <div className="bg-gradient-to-r from-green-400 to-emerald-400 rounded-full px-4 py-2 md:px-6 md:py-3 shadow-lg">
+          <span className="text-lg md:text-2xl font-black text-white">
+            {matchedPairs.length} / {cards.length / 2}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-4 max-w-lg w-full">
+        {cards.map((card) => (
+          <motion.button
+            key={card.id}
+            initial={{ rotateY: 180 }}
+            animate={{ rotateY: card.isFlipped || card.isMatched ? 0 : 180 }}
+            transition={{ duration: 0.3 }}
+            whileHover={{ scale: card.isMatched ? 1 : 1.05 }}
+            whileTap={{ scale: card.isMatched ? 1 : 0.95 }}
+            onClick={() => handleCardClick(card.id)}
+            className={`aspect-square rounded-xl md:rounded-2xl shadow-lg flex items-center justify-center border-4 transition-all active:scale-95 ${
+              card.isMatched
+                ? "border-green-500 bg-green-100"
+                : card.isFlipped
+                ? "border-yellow-400 bg-white"
+                : "border-purple-300 bg-gradient-to-br from-purple-400 to-pink-400"
+            }`}
+            style={{ minHeight: "70px" }}
+            disabled={card.isMatched || isChecking}
+          >
+            {(card.isFlipped || card.isMatched) ? (
+              card.type === "shape" ? (
+                <div className="scale-75 md:scale-100">
+                  <ShapeDisplay shape={card.display} color={card.color} size={40} />
+                </div>
+              ) : card.display === "●" ? (
+                <div 
+                  className="w-10 h-10 md:w-14 md:h-14 rounded-full border-4 border-white shadow-lg"
+                  style={{ backgroundColor: card.color }}
+                />
+              ) : (
+                <span className="text-3xl md:text-5xl">{card.display}</span>
+              )
+            ) : (
+              <span className="text-3xl md:text-4xl">❓</span>
+            )}
+          </motion.button>
+        ))}
+      </div>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setMemoryCategory(null)}
+        className="mt-6 bg-gray-200 rounded-full px-6 py-3 text-lg md:text-xl font-bold text-gray-700 shadow-lg border-4 border-white"
+      >
+        رجوع ↩️
+      </motion.button>
     </motion.div>
   );
 }
